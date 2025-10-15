@@ -46,6 +46,7 @@ internal static partial class OpenAIResponsesJsonUtilities
     }
 
     [JsonSerializable(typeof(StreamingResponseEventBase))]
+    [JsonSerializable(typeof(JsonElement))]
 
     [ExcludeFromCodeCoverage]
     private sealed partial class JsonContext : JsonSerializerContext;

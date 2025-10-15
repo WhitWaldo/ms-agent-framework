@@ -100,6 +100,23 @@ internal sealed class WorkflowThread : AgentThread
         return update;
     }
 
+    /// <summary>
+    /// Creates an AgentRunResponseUpdate that wraps a WorkflowEvent for streaming observability.
+    /// The event is stored in RawRepresentation so downstream processors (like AIAgentResponsesProcessor)
+    /// can detect and emit it as a workflow event.
+    /// </summary>
+    private AgentRunResponseUpdate CreateWorkflowEventUpdate(string responseId, WorkflowEvent workflowEvent)
+    {
+        return new AgentRunResponseUpdate(ChatRole.Assistant, [])
+        {
+            CreatedAt = DateTimeOffset.UtcNow,
+            MessageId = Guid.NewGuid().ToString("N"),
+            Role = ChatRole.Assistant,
+            ResponseId = responseId,
+            RawRepresentation = workflowEvent  // Store the workflow event for downstream processors
+        };
+    }
+
     private async ValueTask<Checkpointed<StreamingRun>> CreateOrResumeRunAsync(List<ChatMessage> messages, CancellationToken cancellationToken = default)
     {
         // The workflow is validated to be a ChatProtocol workflow by the WorkflowHostAgent before creating the thread,
@@ -151,15 +168,30 @@ internal sealed class WorkflowThread : AgentThread
                 switch (evt)
                 {
                     case AgentRunUpdateEvent agentUpdate:
+                        // Yield the actual AgentRunResponseUpdate
                         yield return agentUpdate.Update;
                         break;
+
                     case RequestInfoEvent requestInfo:
+                        // Convert to function call content
                         FunctionCallContent fcContent = requestInfo.Request.ToFunctionCall();
                         AgentRunResponseUpdate update = this.CreateUpdate(this.LastResponseId, fcContent);
                         yield return update;
                         break;
+
                     case SuperStepCompletedEvent stepCompleted:
+                        // Store checkpoint for persistence
                         this.LastCheckpoint = stepCompleted.CompletionInfo?.Checkpoint;
+                        // Emit workflow event for observability
+                        goto default;
+
+                    case RequestHaltEvent:
+                        // Internal workflow control event - don't emit
+                        break;
+
+                    default:
+                        // Emit all other workflow events for observability (DevUI, logging, etc.)
+                        yield return this.CreateWorkflowEventUpdate(this.LastResponseId, evt);
                         break;
                 }
             }

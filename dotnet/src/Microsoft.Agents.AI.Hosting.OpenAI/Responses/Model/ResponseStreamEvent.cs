@@ -1,5 +1,7 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
+using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAI.Responses;
 
@@ -12,8 +14,10 @@ namespace Microsoft.Agents.AI.Hosting.OpenAI.Responses.Model;
 [JsonPolymorphic(UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(StreamingOutputItemAddedResponse), StreamingOutputItemAddedResponse.EventType)]
 [JsonDerivedType(typeof(StreamingOutputItemDoneResponse), StreamingOutputItemDoneResponse.EventType)]
+[JsonDerivedType(typeof(StreamingOutputTextDeltaResponse), StreamingOutputTextDeltaResponse.EventType)]
 [JsonDerivedType(typeof(StreamingCreatedResponse), StreamingCreatedResponse.EventType)]
 [JsonDerivedType(typeof(StreamingCompletedResponse), StreamingCompletedResponse.EventType)]
+[JsonDerivedType(typeof(StreamingWorkflowEventResponse), StreamingWorkflowEventResponse.EventType)]
 internal abstract class StreamingResponseEventBase
 {
     /// <summary>
@@ -112,6 +116,45 @@ internal sealed class StreamingOutputItemDoneResponse : StreamingResponseEventBa
 }
 
 /// <summary>
+/// Represents a streaming response event containing a text delta.
+/// This event is sent during streaming to incrementally deliver text content as it's generated.
+/// DevUI frontend expects this event type to accumulate and display streaming text.
+/// </summary>
+internal sealed class StreamingOutputTextDeltaResponse : StreamingResponseEventBase
+{
+    /// <summary>
+    /// The constant event type identifier for output text delta events.
+    /// </summary>
+    public const string EventType = "response.output_text.delta";
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="StreamingOutputTextDeltaResponse"/> class.
+    /// </summary>
+    /// <param name="sequenceNumber">The sequence number of this event in the streaming response.</param>
+    public StreamingOutputTextDeltaResponse(int sequenceNumber) : base(EventType, sequenceNumber)
+    {
+    }
+
+    /// <summary>
+    /// Gets or sets the index of the output in the response.
+    /// </summary>
+    [JsonPropertyName("output_index")]
+    public int OutputIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the index of the content part within the output item.
+    /// </summary>
+    [JsonPropertyName("content_index")]
+    public int ContentIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the incremental text delta to append to the accumulated text.
+    /// </summary>
+    [JsonPropertyName("delta")]
+    public string? Delta { get; set; }
+}
+
+/// <summary>
 /// Represents a streaming response event indicating that a new response has been created and streaming has begun.
 /// This is typically the first event sent in a streaming response sequence.
 /// </summary>
@@ -163,4 +206,49 @@ internal sealed class StreamingCompletedResponse : StreamingResponseEventBase
     /// </summary>
     [JsonPropertyName("response")]
     public required OpenAIResponse Response { get; set; }
+}
+
+/// <summary>
+/// Represents a streaming response event containing a workflow event.
+/// This event is sent during workflow execution to provide observability into workflow steps,
+/// executor invocations, errors, and other workflow lifecycle events.
+/// </summary>
+internal sealed class StreamingWorkflowEventResponse : StreamingResponseEventBase
+{
+    /// <summary>
+    /// The constant event type identifier for workflow event events.
+    /// </summary>
+    public const string EventType = "response.workflow_event.complete";
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="StreamingWorkflowEventResponse"/> class.
+    /// </summary>
+    /// <param name="sequenceNumber">The sequence number of this event in the streaming response.</param>
+    public StreamingWorkflowEventResponse(int sequenceNumber) : base(EventType, sequenceNumber)
+    {
+    }
+
+    /// <summary>
+    /// Gets or sets the index of the output in the response.
+    /// </summary>
+    [JsonPropertyName("output_index")]
+    public int OutputIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the workflow event data containing event type, executor ID, and event-specific data.
+    /// </summary>
+    [JsonPropertyName("data")]
+    public JsonElement? Data { get; set; }
+
+    /// <summary>
+    /// Gets or sets the executor ID if this is an executor-scoped event.
+    /// </summary>
+    [JsonPropertyName("executor_id")]
+    public string? ExecutorId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the item ID for tracking purposes.
+    /// </summary>
+    [JsonPropertyName("item_id")]
+    public string? ItemId { get; set; }
 }

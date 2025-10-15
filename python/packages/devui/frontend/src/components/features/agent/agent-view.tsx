@@ -286,29 +286,35 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
 
       setLoadingConversations(true);
       try {
-        // Step 1: Try to list conversations from backend (DevUI extension)
-        // This works with DevUI backend but fails with OpenAI/Azure (they don't have list endpoint)
+        // Step 1: Always try to list conversations from backend first
+        // This ensures we get the latest data from the server
         try {
           const { data: conversations } = await apiClient.listConversations(
             selectedAgent.id
           );
 
+          // Backend successfully returned conversations list
+          setAvailableConversations(conversations);
+          
           if (conversations.length > 0) {
             // Found conversations on backend - use most recent
             const mostRecent = conversations[0];
-            setAvailableConversations(conversations);
             setCurrentConversation(mostRecent);
 
             // Load conversation items from backend
             try {
+              console.log(`Loading conversation items for: ${mostRecent.id}`);
               const { data: items } = await apiClient.listConversationItems(
-                mostRecent.id
+                mostRecent.id,
+                { order: "asc" } // Load in chronological order (oldest first)
               );
 
+              console.log(`Loaded ${items.length} items from conversation ${mostRecent.id}`);
               // Use OpenAI ConversationItems directly (no conversion!)
               setChatItems(items as import("@/types/openai").ConversationItem[]);
               setIsStreaming(false);
-            } catch {
+            } catch (error) {
+              console.error(`Failed to load conversation items for ${mostRecent.id}:`, error);
               // 404 means conversation exists but has no items yet (newly created)
               // This is normal - just start with empty chat
               console.debug(`No items found for conversation ${mostRecent.id}, starting fresh`);
@@ -316,11 +322,6 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
               setIsStreaming(false);
             }
 
-            // Cache to localStorage for faster future loads
-            localStorage.setItem(
-              `devui_convs_${selectedAgent.id}`,
-              JSON.stringify(conversations)
-            );
             return;
           }
         } catch {
@@ -371,10 +372,8 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
         setAvailableConversations([newConversation]);
         setChatItems([]);
         setIsStreaming(false);
-
-        // Save to localStorage
-        localStorage.setItem(cachedKey, JSON.stringify([newConversation]));
-      } catch {
+      } catch (error) {
+        console.error("Failed to initialize conversations:", error);
         setAvailableConversations([]);
         setChatItems([]);
         setIsStreaming(false);
@@ -627,15 +626,10 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
       // Reset conversation usage by setting it to initial state
       useDevUIStore.setState({ conversationUsage: { total_tokens: 0, message_count: 0 } });
       accumulatedText.current = "";
-
-      // Update localStorage cache with new conversation
-      const cachedKey = `devui_convs_${selectedAgent.id}`;
-      const updated = [newConversation, ...availableConversations];
-      localStorage.setItem(cachedKey, JSON.stringify(updated));
     } catch {
       // Failed to create conversation
     }
-  }, [selectedAgent, availableConversations, setCurrentConversation, setAvailableConversations, setChatItems, setIsStreaming]);
+  }, [selectedAgent, setCurrentConversation, setAvailableConversations, setChatItems, setIsStreaming]);
 
   // Handle conversation deletion
   const handleDeleteConversation = useCallback(
@@ -659,15 +653,6 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
             (c) => c.id !== conversationId
           );
           setAvailableConversations(updatedConversations);
-
-          // Update localStorage cache
-          if (selectedAgent) {
-            const cachedKey = `devui_convs_${selectedAgent.id}`;
-            localStorage.setItem(
-              cachedKey,
-              JSON.stringify(updatedConversations)
-            );
-          }
 
           // If deleted conversation was selected, switch to another conversation or clear chat
           if (currentConversation?.id === conversationId) {
@@ -694,7 +679,7 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
         alert("Failed to delete conversation. Please try again.");
       }
     },
-    [availableConversations, currentConversation, selectedAgent, onDebugEvent, setAvailableConversations, setCurrentConversation, setChatItems, setIsStreaming]
+    [availableConversations, currentConversation, onDebugEvent, setAvailableConversations, setCurrentConversation, setChatItems, setIsStreaming]
   );
 
   // Handle conversation selection
@@ -712,7 +697,9 @@ export function AgentView({ selectedAgent, onDebugEvent }: AgentViewProps) {
 
       try {
         // Load conversation history from backend
-        const result = await apiClient.listConversationItems(conversationId);
+        const result = await apiClient.listConversationItems(conversationId, {
+          order: "asc", // Load in chronological order (oldest first)
+        });
 
         // Use OpenAI ConversationItems directly (no conversion!)
         const items = result.data as import("@/types/openai").ConversationItem[];

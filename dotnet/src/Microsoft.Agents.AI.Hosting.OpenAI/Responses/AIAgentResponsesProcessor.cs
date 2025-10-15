@@ -5,14 +5,17 @@ using System.Buffers;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses.Model;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses.Utils;
+using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.AI;
@@ -26,6 +29,14 @@ namespace Microsoft.Agents.AI.Hosting.OpenAI.Responses;
 internal sealed class AIAgentResponsesProcessor
 {
     private readonly AIAgent _agent;
+
+    /// <summary>
+    /// Cached JsonSerializerOptions for serializing workflow event data with reflection support.
+    /// </summary>
+    private static readonly JsonSerializerOptions s_workflowDataSerializerOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public AIAgentResponsesProcessor(AIAgent agent)
     {
@@ -100,14 +111,27 @@ internal sealed class AIAgentResponsesProcessor
         private async IAsyncEnumerable<SseItem<StreamingResponseEventBase>> GetStreamingResponsesAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var sequenceNumber = 1;
-            var outputIndex = 1;
+            var outputIndex = 0;
             AgentThread? agentThread = null;
 
-            ResponseItem? lastResponseItem = null;
             OpenAIResponse? lastOpenAIResponse = null;
+            string? currentMessageId = null;
+            var accumulatedText = new System.Text.StringBuilder();
 
             await foreach (var update in agent.RunStreamingAsync(chatMessages, thread: agentThread, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
+                // Check if this update contains a WorkflowEvent in RawRepresentation
+                if (update.RawRepresentation is WorkflowEvent workflowEvent)
+                {
+                    // Emit workflow event
+                    var workflowEventResponse = this.CreateWorkflowEventResponse(workflowEvent, sequenceNumber++, outputIndex);
+                    if (workflowEventResponse != null)
+                    {
+                        yield return new(workflowEventResponse, workflowEventResponse.Type);
+                    }
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(update.ResponseId)
                     && string.IsNullOrEmpty(update.MessageId)
                     && update.Contents is not { Count: > 0 })
@@ -124,6 +148,9 @@ internal sealed class AIAgentResponsesProcessor
                         Response = lastOpenAIResponse
                     };
                     yield return new(responseCreated, responseCreated.Type);
+
+                    // Initialize output index for the first message
+                    outputIndex = 0;
                 }
 
                 if (update.Contents is not { Count: > 0 })
@@ -131,43 +158,75 @@ internal sealed class AIAgentResponsesProcessor
                     continue;
                 }
 
-                // to help convert the AIContent into OpenAI ResponseItem we pack it into the known "chatMessage"
-                // and use existing convertion extension method
-                var chatMessage = new ChatMessage(ChatRole.Assistant, update.Contents)
+                // Extract text content from the update
+                foreach (var content in update.Contents)
                 {
-                    MessageId = update.MessageId,
-                    CreatedAt = update.CreatedAt,
-                    RawRepresentation = update.RawRepresentation
-                };
-
-                foreach (var openAIResponseItem in MicrosoftExtensionsAIResponsesExtensions.AsOpenAIResponseItems([chatMessage]))
-                {
-                    if (chatMessage.MessageId is not null)
+                    if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                     {
-                        openAIResponseItem.SetId(chatMessage.MessageId);
+                        // If this is a new message (different ID), emit the accumulated message first
+                        if (currentMessageId != null && currentMessageId != update.MessageId)
+                        {
+                            // Emit done event for previous message
+                            var previousMessage = new ChatMessage(ChatRole.Assistant, accumulatedText.ToString())
+                            {
+                                MessageId = currentMessageId,
+                            };
+
+                            foreach (var openAIResponseItem in MicrosoftExtensionsAIResponsesExtensions.AsOpenAIResponseItems([previousMessage]))
+                            {
+                                var responseOutputDone = new StreamingOutputItemDoneResponse(sequenceNumber++)
+                                {
+                                    OutputIndex = outputIndex,
+                                    Item = openAIResponseItem
+                                };
+                                yield return new(responseOutputDone, responseOutputDone.Type);
+                            }
+
+                            // Reset for new message
+                            accumulatedText.Clear();
+                            outputIndex++;
+                        }
+
+                        // Track current message ID
+                        currentMessageId = update.MessageId;
+
+                        // Emit text delta event for DevUI
+                        var textDelta = new StreamingOutputTextDeltaResponse(sequenceNumber++)
+                        {
+                            OutputIndex = outputIndex,
+                            ContentIndex = 0, // Always 0 for simple text content
+                            Delta = textContent.Text
+                        };
+                        yield return new(textDelta, textDelta.Type);
+
+                        // Accumulate text for final message
+                        accumulatedText.Append(textContent.Text);
                     }
-
-                    lastResponseItem = openAIResponseItem;
-
-                    var responseOutputItemAdded = new StreamingOutputItemAddedResponse(sequenceNumber++)
-                    {
-                        OutputIndex = outputIndex++,
-                        Item = openAIResponseItem
-                    };
-                    yield return new(responseOutputItemAdded, responseOutputItemAdded.Type);
                 }
             }
 
-            if (lastResponseItem is not null)
+            // Emit the final accumulated message
+            if (accumulatedText.Length > 0 && currentMessageId != null)
             {
-                // we were streaming "response.output_item.added" before
-                // so we should complete it now via "response.output_item.done"
-                var responseOutputDoneAdded = new StreamingOutputItemDoneResponse(sequenceNumber++)
+                var finalMessage = new ChatMessage(ChatRole.Assistant, accumulatedText.ToString())
                 {
-                    OutputIndex = outputIndex++,
-                    Item = lastResponseItem
+                    MessageId = currentMessageId,
                 };
-                yield return new(responseOutputDoneAdded, responseOutputDoneAdded.Type);
+
+                foreach (var openAIResponseItem in MicrosoftExtensionsAIResponsesExtensions.AsOpenAIResponseItems([finalMessage]))
+                {
+                    if (currentMessageId is not null)
+                    {
+                        openAIResponseItem.SetId(currentMessageId);
+                    }
+
+                    var responseOutputDone = new StreamingOutputItemDoneResponse(sequenceNumber++)
+                    {
+                        OutputIndex = outputIndex,
+                        Item = openAIResponseItem
+                    };
+                    yield return new(responseOutputDone, responseOutputDone.Type);
+                }
             }
 
             if (lastOpenAIResponse is not null)
@@ -179,6 +238,44 @@ internal sealed class AIAgentResponsesProcessor
                 };
                 yield return new(responseCompleted, responseCompleted.Type);
             }
+        }
+
+        /// <summary>
+        /// Create a workflow event response for streaming
+        /// </summary>
+        [UnconditionalSuppressMessage("Trimming", "IL2026:RequiresUnreferencedCode", Justification = "Workflow event data serialization requires reflection for arbitrary types.")]
+        [UnconditionalSuppressMessage("AOT", "IL3050:RequiresDynamicCode", Justification = "Workflow event data serialization requires reflection for arbitrary types.")]
+        private StreamingWorkflowEventResponse? CreateWorkflowEventResponse(WorkflowEvent workflowEvent, int sequenceNumber, int outputIndex)
+        {
+            // Extract executor_id if this is an ExecutorEvent
+            string? executorId = null;
+            if (workflowEvent is ExecutorEvent execEvent)
+            {
+                executorId = execEvent.ExecutorId;
+            }
+
+            // Serialize the workflow event data to JSON to avoid source generator issues
+            // with arbitrary object types in the Data property
+            var eventDataDict = new Dictionary<string, object?>
+            {
+                ["event_type"] = workflowEvent.GetType().Name,
+                ["data"] = workflowEvent.Data,
+                ["executor_id"] = executorId,
+                ["timestamp"] = DateTime.UtcNow.ToString("O")
+            };
+
+            // Convert to JsonElement using reflection-based serialization (not source-generated)
+            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(eventDataDict, s_workflowDataSerializerOptions);
+            var eventData = JsonDocument.Parse(jsonBytes).RootElement;
+
+            // Create the properly typed streaming workflow event
+            return new StreamingWorkflowEventResponse(sequenceNumber)
+            {
+                OutputIndex = outputIndex,
+                Data = eventData,
+                ExecutorId = executorId,
+                ItemId = $"wf_{Guid.NewGuid().ToString("N")[..8]}"
+            };
         }
     }
 }
