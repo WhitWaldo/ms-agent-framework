@@ -23,19 +23,14 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
     /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the OpenAI Responses endpoints to.</param>
     /// <param name="agentName">The name of the AI agent service registered in the dependency injection container. This name is used to resolve the <see cref="AIAgent"/> instance from the keyed services.</param>
     /// <param name="responsesPath">Custom route path for the responses endpoint.</param>
-    /// <param name="conversationsPath">Custom route path for the conversations endpoint.</param>
     public static void MapOpenAIResponses(
         this IEndpointRouteBuilder endpoints,
         string agentName,
-        [StringSyntax("Route")] string? responsesPath = null,
-        [StringSyntax("Route")] string? conversationsPath = null)
+        [StringSyntax("Route")] string? responsesPath = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(agentName);
-        if (responsesPath is null || conversationsPath is null)
-        {
-            ValidateAgentName(agentName);
-        }
+        ValidateAgentName(agentName);
 
         var agent = endpoints.ServiceProvider.GetRequiredKeyedService<AIAgent>(agentName);
 

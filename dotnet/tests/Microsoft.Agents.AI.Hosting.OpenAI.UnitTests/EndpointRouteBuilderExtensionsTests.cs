@@ -136,28 +136,6 @@ public sealed class EndpointRouteBuilderExtensionsTests
     }
 
     /// <summary>
-    /// Verifies that both custom paths can be specified together.
-    /// </summary>
-    [Fact]
-    public void MapOpenAIResponses_WithBothCustomPaths_AcceptsBoth()
-    {
-        // Arrange
-        WebApplicationBuilder builder = WebApplication.CreateBuilder();
-        IChatClient mockChatClient = new TestHelpers.SimpleMockChatClient();
-        builder.Services.AddKeyedSingleton("chat-client", mockChatClient);
-        builder.AddAIAgent("agent", "Instructions", chatClientServiceKey: "chat-client");
-        builder.AddOpenAIResponses();
-        using WebApplication app = builder.Build();
-
-        // Act & Assert - Should not throw
-        app.MapOpenAIResponses(
-            "agent",
-            responsesPath: "/custom/responses",
-            conversationsPath: "/custom/conversations");
-        Assert.NotNull(app);
-    }
-
-    /// <summary>
     /// Verifies that multiple agents can be mapped to different paths.
     /// </summary>
     [Fact]
