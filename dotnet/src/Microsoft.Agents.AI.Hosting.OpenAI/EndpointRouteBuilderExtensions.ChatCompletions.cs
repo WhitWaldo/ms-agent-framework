@@ -12,9 +12,9 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAI.Chat;
 
-namespace Microsoft.Agents.AI.Hosting.OpenAI;
+namespace Microsoft.AspNetCore.Builder;
 
-public static partial class EndpointRouteBuilderExtensions
+public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExtensions
 {
     /// <summary>
     /// Maps OpenAI ChatCompletions API endpoints to the specified <see cref="IEndpointRouteBuilder"/> for the given <see cref="AIAgent"/>.

@@ -1,17 +1,15 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
 using System;
-using Microsoft.Agents.AI.Hosting.OpenAI.Responses;
-using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Microsoft.Agents.AI.Hosting.OpenAI;
+namespace Microsoft.Extensions.Hosting;
 
 /// <summary>
 /// Extension methods for <see cref="IHostApplicationBuilder"/> to configure OpenAI Responses support.
 /// </summary>
-public static class HostApplicationBuilderExtensions
+public static class MicrosoftAgentAIHostingOpenAIHostApplicationBuilderExtensions
 {
     /// <summary>
     /// Adds support for exposing <see cref="AIAgent"/> instances via OpenAI Responses.
@@ -22,7 +20,7 @@ public static class HostApplicationBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.TypeInfoResolverChain.Add(ResponsesJsonSerializerOptions.Default.TypeInfoResolver!));
+        builder.Services.AddOpenAIResponses();
 
         return builder;
     }

@@ -10,12 +10,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Microsoft.Agents.AI.Hosting.OpenAI;
+namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
 /// Provides extension methods for mapping OpenAI capabilities to an <see cref="AIAgent"/>.
 /// </summary>
-public static partial class EndpointRouteBuilderExtensions
+public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExtensions
 {
     /// <summary>
     /// Maps OpenAI Responses API endpoints to the specified <see cref="IEndpointRouteBuilder"/> for the given <see cref="AIAgent"/>.
