@@ -3,9 +3,9 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
+using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses.Models;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;

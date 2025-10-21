@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OpenAI;
 using OpenAI.Responses;
 
@@ -1109,8 +1110,8 @@ public sealed class OpenAIResponsesIntegrationTests : IAsyncDisposable
 
         IChatClient mockChatClient = new TestHelpers.SimpleMockChatClient(responseText);
         builder.Services.AddKeyedSingleton("chat-client", mockChatClient);
+        builder.Services.AddOpenAIResponses();
         builder.AddAIAgent(agentName, instructions, chatClientServiceKey: "chat-client");
-        builder.AddOpenAIResponses();
 
         this._app = builder.Build();
         this._app.MapOpenAIResponses(agentName);

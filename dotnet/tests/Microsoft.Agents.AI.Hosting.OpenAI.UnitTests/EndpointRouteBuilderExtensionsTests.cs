@@ -4,6 +4,7 @@ using System;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Microsoft.Agents.AI.Hosting.OpenAI.UnitTests;
 
@@ -62,8 +63,8 @@ public sealed class EndpointRouteBuilderExtensionsTests
         WebApplicationBuilder builder = WebApplication.CreateBuilder();
         IChatClient mockChatClient = new TestHelpers.SimpleMockChatClient();
         builder.Services.AddKeyedSingleton("chat-client", mockChatClient);
+        builder.Services.AddOpenAIResponses();
         builder.AddAIAgent(invalidName, "Instructions", chatClientServiceKey: "chat-client");
-        builder.AddOpenAIResponses();
         using WebApplication app = builder.Build();
 
         // Act & Assert
