@@ -39,6 +39,22 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
         MapResponses(responsesRouteGroup, agent);
     }
 
+    /// <summary>
+    /// Maps OpenAI Responses API endpoints to the specified <see cref="IEndpointRouteBuilder"/> for the given <see cref="AIAgent"/>.
+    /// </summary>
+    /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the OpenAI Responses endpoints to.</param>
+    /// <param name="responsesPath">Custom route path for the responses endpoint.</param>
+    public static void MapOpenAIResponses(
+        this IEndpointRouteBuilder endpoints,
+        [StringSyntax("Route")] string? responsesPath = null)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        responsesPath ??= "/v1/responses";
+        var responsesRouteGroup = endpoints.MapGroup(responsesPath);
+        MapResponses(responsesRouteGroup);
+    }
+
     private static void MapResponses(IEndpointRouteBuilder routeGroup, AIAgent agent)
     {
         var endpointAgentName = agent.DisplayName;
@@ -46,6 +62,16 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
         routeGroup.MapPost("/", async ([FromBody] CreateResponse createResponse, CancellationToken cancellationToken)
             => await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false))
             .WithName(endpointAgentName + "/CreateResponse");
+    }
+
+    private static void MapResponses(IEndpointRouteBuilder routeGroup)
+    {
+        routeGroup.MapPost("/", async ([FromBody] CreateResponse createResponse, IServiceProvider serviceProvider, CancellationToken cancellationToken) =>
+        {
+            var agentName = createResponse.Model;
+            var agent = serviceProvider.GetRequiredKeyedService<AIAgent>(agentName);
+            return await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false);
+        }).WithName("CreateResponse");
     }
 
     private static void ValidateAgentName([NotNull] string agentName)

@@ -31,7 +31,7 @@ internal sealed partial class IdGenerator
     {
         this.ResponseId = responseId ?? NewId("resp");
         this.ConversationId = conversationId ?? NewId("conv");
-        this._partitionId = ExtractPartitionId(this.ConversationId);
+        this._partitionId = GetPartitionIdOrDefault(this.ConversationId) ?? string.Empty;
     }
 
     /// <summary>
@@ -109,9 +109,8 @@ internal sealed partial class IdGenerator
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(stringLength, 1);
         var entropy = GetRandomString(stringLength);
-        var pKey = partitionKey ?? (string.IsNullOrEmpty(partitionKeyHint)
-            ? GetRandomString(partitionKeyLength)
-            : ExtractPartitionId(partitionKeyHint));
+
+        string pKey = partitionKey ?? GetPartitionIdOrDefault(partitionKeyHint) ?? GetRandomString(partitionKeyLength);
 
         if (!string.IsNullOrEmpty(watermark))
         {
@@ -139,28 +138,30 @@ internal sealed partial class IdGenerator
         RandomNumberGenerator.GetString("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", stringLength);
 
     /// <summary>
-    /// Extracts the partition key from an existing ID.
+    /// Extracts the partition key from an existing ID, or returns null if extraction fails.
     /// </summary>
     /// <param name="id">The ID to extract the partition key from.</param>
     /// <param name="stringLength">The length of the random entropy string in the ID.</param>
     /// <param name="partitionKeyLength">The length of the partition key if generating a new one.</param>
     /// <param name="delimiter">The delimiter character used in the ID.</param>
-    /// <returns>The partition key portion of the ID.</returns>
-    /// <exception cref="ArgumentException">Thrown when the ID is null, empty, or does not contain a valid partition key.</exception>
-    private static string ExtractPartitionId(string id, int stringLength = 32, int partitionKeyLength = 16,
+    /// <returns>The partition key if successfully extracted; otherwise, null.</returns>
+    private static string? GetPartitionIdOrDefault(string? id, int stringLength = 32, int partitionKeyLength = 16,
         string delimiter = "_")
     {
-        ArgumentException.ThrowIfNullOrEmpty(id);
+        if (string.IsNullOrEmpty(id))
+        {
+            return null;
+        }
 
         var parts = id.Split([delimiter], StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2)
         {
-            throw new ArgumentException($"Id '{id}' does not contain a valid partition key.", nameof(id));
+            return null;
         }
 
         if (parts[1].Length < stringLength + partitionKeyLength)
         {
-            throw new ArgumentException($"Id '{id}' does not contain a valid id.", nameof(id));
+            return null;
         }
 
         // get last partitionKeyLength characters from the last part as the partition key
