@@ -6,6 +6,7 @@ using System.Threading;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses;
 using Microsoft.Agents.AI.Hosting.OpenAI.Responses.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,8 +59,19 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
         var group = endpoints.MapGroup(responsesPath);
         group.MapPost("/", async ([FromBody] CreateResponse createResponse, IServiceProvider serviceProvider, CancellationToken cancellationToken) =>
         {
-            var agentName = createResponse.Model;
-            var agent = serviceProvider.GetRequiredKeyedService<AIAgent>(agentName);
+            // DevUI uses the 'model' field to specify the agent name.
+            var agentName = createResponse.Agent?.Name ?? createResponse.Model;
+            if (agentName is null)
+            {
+                return Results.BadRequest("No 'agent.name' or 'model' specified in the request.");
+            }
+
+            var agent = serviceProvider.GetKeyedService<AIAgent>(agentName);
+            if (agent is null)
+            {
+                return Results.NotFound($"Agent named '{agentName}' was not found.");
+            }
+
             return await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false);
         }).WithName("CreateResponse");
         return group;
