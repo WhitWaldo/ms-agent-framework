@@ -23,7 +23,7 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
     /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the OpenAI Responses endpoints to.</param>
     /// <param name="agentName">The name of the AI agent service registered in the dependency injection container. This name is used to resolve the <see cref="AIAgent"/> instance from the keyed services.</param>
     /// <param name="responsesPath">Custom route path for the responses endpoint.</param>
-    public static void MapOpenAIResponses(
+    public static IEndpointConventionBuilder MapOpenAIResponses(
         this IEndpointRouteBuilder endpoints,
         string agentName,
         [StringSyntax("Route")] string? responsesPath = null)
@@ -35,8 +35,12 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
         var agent = endpoints.ServiceProvider.GetRequiredKeyedService<AIAgent>(agentName);
 
         responsesPath ??= $"/{agentName}/v1/responses";
-        var responsesRouteGroup = endpoints.MapGroup(responsesPath);
-        MapResponses(responsesRouteGroup, agent);
+        var group = endpoints.MapGroup(responsesPath);
+        var endpointAgentName = agent.DisplayName;
+        group.MapPost("/", async ([FromBody] CreateResponse createResponse, CancellationToken cancellationToken)
+            => await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false))
+            .WithName(endpointAgentName + "/CreateResponse");
+        return group;
     }
 
     /// <summary>
@@ -44,34 +48,21 @@ public static partial class MicrosoftAgentAIHostingOpenAIEndpointRouteBuilderExt
     /// </summary>
     /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the OpenAI Responses endpoints to.</param>
     /// <param name="responsesPath">Custom route path for the responses endpoint.</param>
-    public static void MapOpenAIResponses(
+    public static IEndpointConventionBuilder MapOpenAIResponses(
         this IEndpointRouteBuilder endpoints,
         [StringSyntax("Route")] string? responsesPath = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
         responsesPath ??= "/v1/responses";
-        var responsesRouteGroup = endpoints.MapGroup(responsesPath);
-        MapResponses(responsesRouteGroup);
-    }
-
-    private static void MapResponses(IEndpointRouteBuilder routeGroup, AIAgent agent)
-    {
-        var endpointAgentName = agent.DisplayName;
-
-        routeGroup.MapPost("/", async ([FromBody] CreateResponse createResponse, CancellationToken cancellationToken)
-            => await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false))
-            .WithName(endpointAgentName + "/CreateResponse");
-    }
-
-    private static void MapResponses(IEndpointRouteBuilder routeGroup)
-    {
-        routeGroup.MapPost("/", async ([FromBody] CreateResponse createResponse, IServiceProvider serviceProvider, CancellationToken cancellationToken) =>
+        var group = endpoints.MapGroup(responsesPath);
+        group.MapPost("/", async ([FromBody] CreateResponse createResponse, IServiceProvider serviceProvider, CancellationToken cancellationToken) =>
         {
             var agentName = createResponse.Model;
             var agent = serviceProvider.GetRequiredKeyedService<AIAgent>(agentName);
             return await AIAgentResponsesProcessor.CreateModelResponseAsync(agent, createResponse, cancellationToken).ConfigureAwait(false);
         }).WithName("CreateResponse");
+        return group;
     }
 
     private static void ValidateAgentName([NotNull] string agentName)
